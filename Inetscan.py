@@ -5,136 +5,134 @@ import threading
 import sys
 from queue import Queue
 
-max_hilos = 80
-puertos = [21, 22, 23, 25, 79, 80, 88, 135, 3389, 443, 445, 873, 2049, 2375, 2376, 8080, 8081]
-ips_procesadas = set()
+max_threads = 80
+ports = [21, 22, 23, 25, 79, 80, 88, 135, 3389, 443, 445, 873, 2049, 2375, 2376, 8080, 8081]
+processed_ips = set()
 lock = threading.Lock()
-cola_salida = Queue()
+output_queue = Queue()
 
-def hacer_ping(ip):
+def ping_host(ip):
     try:
         result = subprocess.run(['fping', '-a', '-q', str(ip)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if result.returncode == 0:
             with lock:
-                if ip not in ips_procesadas:
-                    ips_procesadas.add(ip)
-                    cola_salida.put(f"\033[1;32m[+] {ip} está viva\033[0m")
+                if ip not in processed_ips:
+                    processed_ips.add(ip)
+                    output_queue.put(f"\033[1;32m[+] {ip} is alive\033[0m")
                     return True
     except Exception:
         pass
     return False
 
-def escanear_puertos(ip, archivo_puertos):
-    for puerto in puertos:
+def scan_ports(ip, ports_file):
+    for port in ports:
         try:
-            result = subprocess.run(['nc', '-z', '-w1', str(ip), str(puerto)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            result = subprocess.run(['nc', '-z', '-w1', str(ip), str(port)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if result.returncode == 0:
                 with lock:
-                    cola_salida.put(f"\033[1;32m[+] {ip}:{puerto} abierto \033[0m")
-                    archivo_puertos.write(f"{ip}:{puerto}\n")
+                    output_queue.put(f"\033[1;32m[+] {ip}:{port} is open\033[0m")
+                    ports_file.write(f"{ip}:{port}\n")
         except Exception:
             pass
 
-def mostrar_progreso(progreso, total):
-    porcentaje = (progreso / total) * 100
-    barra = ('#' * int(porcentaje / 2)).ljust(50)
-    sys.stdout.write(f"\r[ {barra} ] {porcentaje:3.0f}% completado")
+def show_progress(progress, total):
+    percentage = (progress / total) * 100
+    bar = ('#' * int(percentage / 2)).ljust(50)
+    sys.stdout.write(f"\r[ {bar} ] {percentage:3.0f}% completed")
     sys.stdout.flush()
 
-def procesar_salida():
+def process_output():
     while True:
-        mensaje = cola_salida.get()
-        if mensaje is None:  # Señal para terminar
+        message = output_queue.get()
+        if message is None:  # Signal to end
             break
-        sys.stdout.write("\r" + " " * 80 + "\r")  # Limpia la línea
-        print(mensaje, end="\n")
+        sys.stdout.write("\r" + " " * 80 + "\r")  # Clear the line
+        print(message, end="\n")
         sys.stdout.flush()
 
-def validar_rangos(ip_range):
+def validate_ranges(ip_range):
     try:
         network = ipaddress.IPv4Network(ip_range, strict=False)
-        rangos_validos = []
+        valid_ranges = []
 
-        def validar_subred(subnet):
-            for host in list(subnet.hosts())[:5]:  # Primeras 5 IPs de hosts
+        def validate_subnet(subnet):
+            for host in list(subnet.hosts())[:5]:  # First 5 host IPs
                 print(host)
-                if hacer_ping(host):
-                    rangos_validos.append(subnet)
+                if ping_host(host):
+                    valid_ranges.append(subnet)
                     break
 
         threads = []
-        for subnet in network.subnets(new_prefix=24):  # Subredes del rango original
-            while len(threads) >= max_hilos:
+        for subnet in network.subnets(new_prefix=24):  # Subnets of the original range
+            while len(threads) >= max_threads:
                 for t in threads:
                     if not t.is_alive():
                         threads.remove(t)
-            thread = threading.Thread(target=validar_subred, args=(subnet,))
+            thread = threading.Thread(target=validate_subnet, args=(subnet,))
             threads.append(thread)
             thread.start()
 
         for t in threads:
             t.join()
 
-        return rangos_validos
+        return valid_ranges
 
     except ValueError:
-        print("\033[1;31m[!] Rango de IP no válido.\033[0m")
+        print("\033[1;31m[!] Invalid IP range.\033[0m")
         return []
 
-def escanear_red(rangos_validos, archivo_ips, archivo_puertos):
-    total_ips = sum(len(list(r.hosts())) for r in rangos_validos)
-    progreso = 0
+def scan_network(valid_ranges, ips_file, ports_file):
+    total_ips = sum(len(list(r.hosts())) for r in valid_ranges)
+    progress = 0
 
-    def procesar_ip(ip):
-        nonlocal progreso
-        if hacer_ping(ip):
-            with open(archivo_ips.name, "a") as f:
+    def process_ip(ip):
+        nonlocal progress
+        if ping_host(ip):
+            with open(ips_file.name, "a") as f:
                 f.write(f"{ip}\n")
-            escanear_puertos(ip, archivo_puertos)
+            scan_ports(ip, ports_file)
         with lock:
-            progreso += 1
-            mostrar_progreso(progreso, total_ips)
+            progress += 1
+            show_progress(progress, total_ips)
 
     threads = []
-    for rango in rangos_validos:
-        for ip in rango.hosts():
-            while len(threads) >= max_hilos:
+    for ip_range in valid_ranges:
+        for ip in ip_range.hosts():
+            while len(threads) >= max_threads:
                 for t in threads:
                     if not t.is_alive():
                         threads.remove(t)
-            thread = threading.Thread(target=procesar_ip, args=(ip,))
+            thread = threading.Thread(target=process_ip, args=(ip,))
             threads.append(thread)
             thread.start()
 
     for t in threads:
         t.join()
 
-    cola_salida.put(None)  # Señal para finalizar el hilo de salida
-    print("\n\033[1;33m[!] \033[1mEscaneo completo.\033[0m")
+    output_queue.put(None)  # Signal to end output thread
+    print("\n\033[1;33m[!] \033[1mScan complete.\033[0m")
 
 def main():
-    parser = argparse.ArgumentParser(description="Escáner de redes.")
-    parser.add_argument("-i", "--ip", required=True, help="Especifica el rango de IP para escanear (ej. 192.168.1.0/24, 10.0.0.0/8)")
-    parser.add_argument("-o", "--output", default="resultado", help="Nombre base del archivo de salida (por defecto: 'resultado')")
+    parser = argparse.ArgumentParser(description="Network scanner.")
+    parser.add_argument("-i", "--ip", required=True, help="Specify the IP range to scan (e.g., 192.168.1.0/24, 10.0.0.0/8)")
+    parser.add_argument("-o", "--output", default="result", help="Base name for the output file (default: 'result')")
     args = parser.parse_args()
 
-    with open(f"{args.output}_ips_vivas.txt", "w") as archivo_ips, open(f"{args.output}_puertos_abiertos.txt", "w") as archivo_puertos:
-        print(f"\033[1;33m[!] \033[0m\033[1;33mValidando rangos en: {args.ip}\033[0m")
+    with open(f"{args.output}_alive_ips.txt", "w") as ips_file, open(f"{args.output}_open_ports.txt", "w") as ports_file:
+        print(f"\033[1;33m[!] \033[0m\033[1;33mValidating ranges in: {args.ip}\033[0m")
 
-        salida_thread = threading.Thread(target=procesar_salida, daemon=True)
-        salida_thread.start()
+        output_thread = threading.Thread(target=process_output, daemon=True)
+        output_thread.start()
 
-        rangos_validos = validar_rangos(args.ip)
+        valid_ranges = validate_ranges(args.ip)
 
-        if not rangos_validos:
-            print("\033[1;31m[!] No se encontraron rangos válidos.\033[0m")
-            cola_salida.put(None)
+        if not valid_ranges:
+            print("\033[1;31m[!] No valid ranges found.\033[0m")
+            output_queue.put(None)
             return
 
-        print(f"\033[1;33m[!] \033[0m\033[1;33m{len(rangos_validos)} rangos válidos encontrados. Iniciando escaneo...\033[0m")
-        escanear_red(rangos_validos, archivo_ips, archivo_puertos)
+        print(f"\033[1;33m[!] \033[0m\033[1;33m{len(valid_ranges)} valid ranges found. Starting scan...\033[0m")
+        scan_network(valid_ranges, ips_file, ports_file)
 
-        salida_thread.join()
+        output_thread.join()
 
-if __name__ == "__main__":
-    main()

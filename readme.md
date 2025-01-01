@@ -1,76 +1,79 @@
-# Escáner de Redes
+# InetScan
 
-Este proyecto es una herramienta de escaneo de redes en Python que permite identificar dispositivos activos y puertos abiertos en un rango de direcciones IP. Utiliza `fping` para verificar la disponibilidad de hosts y `nc` para comprobar puertos abiertos.
+This project is a Python-based network scanning tool that identifies active devices and open ports within a range of IP addresses. It uses `fping` to check host availability and `nc` to probe open ports.
 
-## Características
+## Features
 
-- **Ping concurrente**: Verifica rápidamente qué dispositivos están activos.
-- **Escaneo de puertos**: Escanea una lista predefinida de puertos comunes.
-- **Barra de progreso**: Muestra el progreso del escaneo en tiempo real.
-- **Salida en archivos**:
-  - Lista de direcciones IP activas.
-  - Lista de IPs y sus puertos abiertos.
-- Optimizado con múltiples hilos para un rendimiento más rápido.
+- **Concurrent Ping**: Quickly checks which devices are active.
+- **Port Scanning**: Scans a predefined list of common ports.
+- **Progress Bar**: Displays real-time scanning progress.
+- **Output Files**:
+  - List of active IP addresses.
+  - List of IPs and their open ports.
+- Optimized with multithreading for faster performance.
 
-## Requisitos
+## Requirements
 
 1. Python 3.x
-2. Herramientas externas:
-   - `fping`: Para realizar el ping a múltiples direcciones IP.
-   - `nc` (Netcat): Para escanear puertos.
+2. External tools:
+   - `fping`: To ping multiple IP addresses.
+   - `nc` (Netcat): To scan ports.
 
-### Instalación de dependencias
+## Installing Dependencies
 
-En sistemas basados en Linux, puedes instalar las herramientas requeridas con:
+On Linux-based systems, you can install the required tools with:
 
 ```bash
 sudo apt update
 sudo apt install fping netcat
 ```
 
-### Uso
+## Usage
 
-Ejecuta el script de la siguiente manera:
+### Run the script as follows:
 
 ```bash
-python escaner.py -i <rango_de_IP> -o <nombre_archivo_base>
+python scanner.py -i <IP_range> -o <base_filename>
 ```
-Ejemplo:
+
+### Example:
+
 ```bash
-python escaner.py -i 192.168.1.0/24 -o resultados
+python scanner.py -i 192.168.1.0/24 -o results
 ```
 
+### This command will:
 
-Este comando:
+- Scan all IPs in the range 192.168.1.0/24.
+- Save active IP addresses to results_active_ips.txt.
+- Save open ports to results_open_ports.txt.
 
-    Escaneará todas las IPs en el rango 192.168.1.0/24.
-    Guardará las direcciones IP activas en resultados_ips_vivas.txt.
-    Guardará los puertos abiertos en resultados_puertos_abiertos.txt.
+### Output Files
 
-Archivos de Salida
+1.  results_active_ips.txt: Contains a list of detected active IP addresses.
+2.  results_open_ports.txt: Lists IPs and their open ports.
 
-    resultados_ips_vivas.txt: Contiene una lista de las direcciones IP activas encontradas.
-    resultados_puertos_abiertos.txt: Lista de IPs y sus puertos abiertos.
+## Customization
+- Changing the Number of Threads
 
-Personalización
-Cambiar el número de hilos
+- By default, the script uses 80 threads for scanning. You can modify this variable in the source code:
+    ```
+    max_threads = 30
+    ```
+    Modifying Ports to Scan
+    
+    The list of ports is defined in the code:
+    ```
+    ports = [21, 23, 25, 79, 80, 88, 135, 443, 445, 2375, 2376, 8080, 8081]
+    ```
+    Add or remove ports according to your needs.
 
-Por defecto, el script utiliza 80 hilos para escanear. Puedes modificar esta variable en el código fuente:
+## Notes
 
-max_hilos = 30
 
-Modificar los puertos a escanear
+This script is intended for use on internal networks or with the explicit permission of the network owner. Do not use it on unauthorized networks.
+Requires permissions to install and execute external tools (fping, nc).
 
-La lista de puertos está definida en el código:
+## Contributions
 
-puertos = [21, 23, 25, 79, 80, 88, 135, 443, 445, 2375, 2376, 8080, 8081]
-
-Agrega o elimina puertos según tus necesidades.
-Notas
-
-    Este script está diseñado para ser utilizado en redes internas o con permiso explícito del propietario. No lo uses en redes sin autorización.
-    Requiere permisos para instalar y ejecutar herramientas externas (fping, nc).
-
-### Contribuciones
-
-Las contribuciones son bienvenidas. Si encuentras algún problema o tienes una mejora, abre un issue o envía un pull request.
+Contributions are welcome! If you encounter any issues or have an improvement to propose, feel free to open an issue or submit a pull request.

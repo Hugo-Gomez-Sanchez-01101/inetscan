@@ -5,11 +5,50 @@ import threading
 import sys
 from queue import Queue
 
-max_hilos = 30
-puertos = [21, 23, 25, 79, 80, 88, 135, 443, 445, 2375, 2376, 8080, 8081]
-ips_procesadas = set()
+max_threads = 30
+semaphore = threading.Semaphore(max_threads)
+
+ports = [21, 23, 25, 79, 80, 88, 135, 443, 445, 2375, 2376, 8080, 8081]
+processed_ips = set()
 lock = threading.Lock()
-cola_salida = Queue()
+output_queue = Queue()
+
+
+def start_scan(ip, aggressive):
+    subnet_ranges = get_subnet_ranges(ip)
+    alive_ranges = []
+
+    def scan_subnet(subnet_range):
+        with semaphore:
+            if range_exists(subnet_range):
+                if aggressive:
+                    network_scan(subnet_range)
+                else:
+                    alive_ranges.append(subnet_range)
+
+    threads = []
+    for subnet_range in subnet_ranges:
+        thread = threading.Thread(target=scan_subnet, args=(subnet_range,))
+        threads.append(thread)
+        thread.start()
+
+    for thread in threads:
+        thread.join()
+
+    if not aggressive:
+        threads = []
+        for subnet_range in alive_ranges:
+            thread = threading.Thread(target=network_scan, args=(subnet_range,))
+            threads.append(thread)
+            thread.start()
+
+        for thread in threads:
+            thread.join()
+
+
+def get_subnet_ranges(network_ip):
+    network = ipaddress.IPv4Network(network_ip, strict=False)
+    return [str(subnet) for subnet in (network.subnets(new_prefix=24) if network.prefixlen < 24 else [network])]
 
 
 def ping(ip):
@@ -17,119 +56,119 @@ def ping(ip):
         result = subprocess.run(['fping', '-a', '-q', str(ip)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if result.returncode == 0:
             with lock:
-                if ip not in ips_procesadas:
-                    ips_procesadas.add(ip)
-                    cola_salida.put(f"\033[1;32m[+] {ip} is alive\033[0m")
+                if ip not in processed_ips:
+                    processed_ips.add(ip)
+                    output_queue.put(f"\033[1;32m[+] {ip} is alive\033[0m")
                     return True
     except Exception:
         pass
     return False
 
 
-def escanear_puertos(ip, archivo_puertos):
-    for puerto in puertos:
+def scan_ports(ip, ports_file):
+    for port in ports:
         try:
-            result = subprocess.run(['nc', '-z', '-w1', str(ip), str(puerto)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            result = subprocess.run(['nc', '-z', '-w1', str(ip), str(port)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if result.returncode == 0:
                 with lock:
-                    cola_salida.put(f"\033[1;32m[+] {ip}:{puerto} open \033[0m")
-                    archivo_puertos.write(f"{ip}:{puerto}\n")
+                    output_queue.put(f"\033[1;32m[+] {ip}:{port} open \033[0m")
+                    ports_file.write(f"{ip}:{port}\n")
         except Exception:
             pass
 
 
-def range_exist(network):
+def range_exists(network):
     hosts = list(network.hosts())
     ip_groups = {
         "first_5": hosts[:5],
-        "from_50": hosts[50:55], 
+        "from_50": hosts[50:55],
         "from_100": hosts[100:105],
         "from_150": hosts[150:155],
-        "from_160": hosts[160:165],
         "from_200": hosts[200:205],
         "from_250": hosts[250:255],
     }
 
-    for range_ips, ips in ip_groups.items():
-        print(f"\n[+] Scaning range {range_ips}")
+    for range_name, ips in ip_groups.items():
+        print(f"\n[+] Scanning range {range_name}")
         for ip in ips:
             print(f"\n[+] Checking if alive {ip}")
-            if(ping(ip)):
+            if ping(ip):
                 print(f"\033[1;32m[+] Found {ip} is alive \033[0m")
                 return True
-    
     return False
 
 
-def range_scan(ip_range, archivo_ips, archivo_puertos):
+def network_scan(ip_range):
     try:
         network = ipaddress.IPv4Network(ip_range, strict=False)
+        total_ips = len(list(network.hosts()))
+        progress = 0
 
-        if range_exist(network):
-            total_ips = len(list(network.hosts()))
-            progreso = 0
-            def process_ip(ip):
-                print(ip)
-                nonlocal progreso
+        def process_ip(ip):
+            with semaphore:
+                nonlocal progress
                 if ping(ip):
-                    with open(archivo_ips.name, "a") as f:
+                    with open(ips_file.name, "a") as f:
                         f.write(f"{ip}\n")
-                    escanear_puertos(ip, archivo_puertos)
+                    scan_ports(ip, ports_file)
                 with lock:
-                    progreso += 1
-                    mostrar_progreso(progreso, total_ips)
+                    progress += 1
+                    show_progress(progress, total_ips)
 
-            threads = []
-            for ip in network.hosts():
-                while len(threads) >= max_hilos:
-                    threads = [t for t in threads if t.is_alive()]
-                
-                thread = threading.Thread(target=process_ip, args=(ip,))
-                threads.append(thread)
-                thread.start()
+        threads = []
+        for ip in network.hosts():
+            thread = threading.Thread(target=process_ip, args=(ip,))
+            threads.append(thread)
+            thread.start()
 
-            for t in threads:
-                t.join()
-        else:
-            print("[-] range x discarded.")
-        cola_salida.put(None)
+        for thread in threads:
+            thread.join()
+
+        output_queue.put(None)
         print("\n[+] Scan complete.")
     except ValueError as e:
         print(e)
         print("[!] Invalid IP range.")
 
 
-#Visual
-def mostrar_progreso(progreso, total):
-    porcentaje = (progreso / total) * 100
-    barra = ('#' * int(porcentaje / 2)).ljust(50)
-    sys.stdout.write(f"\r[ {barra} ] {porcentaje:3.0f}% completed")
+def show_progress(progress, total):
+    percentage = (progress / total) * 100
+    bar = ('#' * int(percentage / 2)).ljust(50)
+    sys.stdout.write(f"\r[ {bar} ] {percentage:3.0f}% completed")
     sys.stdout.flush()
 
-def procesar_salida():
+
+def process_output():
     while True:
-        mensaje = cola_salida.get()
-        if mensaje is None:
+        message = output_queue.get()
+        if message is None:
             break
         sys.stdout.write("\r" + " " * 80 + "\r")
-        print(mensaje, end="\n")
+        print(message, end="\n")
         sys.stdout.flush()
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Escáner de redes.")
-    parser.add_argument("-i", "--ip", required=True, help="Especifica el rango de IP para escanear (ej. 192.168.1.0/24, 10.0.0.0/16)")
-    parser.add_argument("-o", "--output", default="resultado", help="Nombre base del archivo de salida (por defecto: 'resultado')")
+    global ips_file, ports_file
+    parser = argparse.ArgumentParser(description="Network scanner.")
+    parser.add_argument("-i", "--ip", required=True, help="Specify the IP range to scan (e.g., 192.168.1.0/24, 10.0.0.0/16)")
+    parser.add_argument("-o", "--output", default="result", help="Base name for the output files (default: 'result')")
+    parser.add_argument("-a", "--aggressive", action="store_true", help="Scan live networks immediately")
     args = parser.parse_args()
 
-    with open(f"{args.output}_ips_vivas.txt", "w") as archivo_ips, open(f"{args.output}_puertos_abiertos.txt", "w") as archivo_puertos:
-        print(f"[+] Escaneando el rango: {args.ip}")
-        
-        salida_thread = threading.Thread(target=procesar_salida, daemon=True)
-        salida_thread.start()
+    with open(f"{args.output}_alive_ips.txt", "w") as input_ips_file, open(f"{args.output}_open_ports.txt", "w") as input_ports_file:
+        print(f"[+] Scanning range: {args.ip}")
 
-        range_scan(args.ip, archivo_ips, archivo_puertos)
+        output_thread = threading.Thread(target=process_output, daemon=True)
+        output_thread.start()
 
-        salida_thread.join()
+        ips_file = input_ips_file
+        ports_file = input_ports_file
+
+        start_scan(args.ip, args.aggressive)
+
+        output_thread.join()
+
 
 if __name__ == "__main__":
     main()

@@ -25,8 +25,14 @@ def start_scan(ip, output_file):
         else:
             print(f"[-] Subnet {subnet} is not alive")
 
+    threads = []
     for subnet in subnet_ranges:
-        check_range(subnet)
+        thread = threading.Thread(target=check_range, args=(subnet,))
+        threads.append(thread)
+        thread.start()
+    
+    for thread in threads:
+        thread.join()
     
     print("\n[+] Alive ranges:", alive_ranges)
     with open(output_file, "w") as f:
@@ -80,22 +86,19 @@ def range_exists(network):
                 alive = True
                 print(f"\033[1;32m[+] Found {ip} is alive \033[0m")
 
+    threads = []
     for range_name, ips in ip_groups.items():
         if ips:
             print(f"\n[+] Scanning range {range_name}")
-            threads = []
-            
             for ip in ips:
                 thread = threading.Thread(target=check_ip, args=(ip,))
                 threads.append(thread)
                 thread.start()
+    
+    for thread in threads:
+        thread.join()
 
-            for thread in threads:
-                thread.join()
-
-        if alive:
-            return True
-    return False
+    return alive
 
 def network_scan(ip_range, output_file):
     try:
@@ -117,6 +120,10 @@ def network_scan(ip_range, output_file):
             thread = threading.Thread(target=process_ip, args=(ip,))
             threads.append(thread)
             thread.start()
+            if len(threads) >= max_threads:
+                for t in threads:
+                    t.join()
+                threads = []
 
         for thread in threads:
             thread.join()

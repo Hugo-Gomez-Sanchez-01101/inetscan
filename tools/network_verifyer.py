@@ -14,7 +14,7 @@ output_queue = Queue()
 processed_ips = set()
 console = Console()
 
-def verify_network(ip, output_file, aggressive, timeout):
+def verify_network(ip, aggressive, timeout):
     subnet_ranges = get_subnet_ranges(ip)
     alive_ranges = []
 
@@ -37,11 +37,6 @@ def verify_network(ip, output_file, aggressive, timeout):
     
     for thread in threads:
         thread.join()
-    
-    console.print("\n[bold yellow]Network/s Verified! Results:[/bold yellow]", alive_ranges)
-    
-    with open(output_file + "_alive_ranges.txt", "w") as f:
-        f.write("\n".join(alive_ranges) + "\n")
 
     return alive_ranges
 

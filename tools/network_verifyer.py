@@ -1,4 +1,20 @@
-def verify_networks(ip, output_file, aggressive, timeout):
+from rich.console import Console
+from rich.table import Table
+from queue import Queue
+import subprocess
+import ipaddress
+import threading
+import time
+
+max_threads = 30
+semaphore = threading.Semaphore(max_threads)
+
+lock = threading.Lock()
+output_queue = Queue()
+processed_ips = set()
+console = Console()
+
+def verify_network(ip, output_file, aggressive, timeout):
     subnet_ranges = get_subnet_ranges(ip)
     alive_ranges = []
 
@@ -9,6 +25,7 @@ def verify_networks(ip, output_file, aggressive, timeout):
         else:
             console.print(f"[bold red][-] Subnet {subnet} is not alive[/bold red]")
     
+
     threads = []
     for subnet in subnet_ranges:
         if aggressive:
@@ -23,14 +40,16 @@ def verify_networks(ip, output_file, aggressive, timeout):
     
     console.print("\n[bold yellow]Network/s Verified! Results:[/bold yellow]", alive_ranges)
     
-    with open(output_file, "w") as f:
+    with open(output_file + "_alive_ranges.txt", "w") as f:
         f.write("\n".join(alive_ranges) + "\n")
 
     return alive_ranges
 
+
 def get_subnet_ranges(network_ip):
     network = ipaddress.IPv4Network(network_ip, strict=False)
     return [str(subnet) for subnet in (network.subnets(new_prefix=24) if network.prefixlen < 24 else [network])]
+
 
 def ping(ip, timeout):
     try:
@@ -42,20 +61,6 @@ def ping(ip, timeout):
     except Exception:
         return False
 
-def scan_ports(ip, output_file):
-    open_ports = []
-    for port in ports:
-        try:
-            result = subprocess.run(['nc', '-z', '-w1', str(ip), str(port)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            if result.returncode == 0:
-                open_ports.append(port)
-        except Exception:
-            pass
-    
-    if open_ports:
-        with lock:
-            with open(output_file, "a") as f:
-                f.write(f"{ip}: {', '.join(map(str, open_ports))}\n")
 
 def range_exists(network, timeout):
     network = ipaddress.IPv4Network(network, strict=False)
@@ -93,5 +98,3 @@ def range_exists(network, timeout):
         thread.join()
 
     return alive
-
-

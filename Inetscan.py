@@ -1,9 +1,11 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from tools.network_verifyer import Network_Verifyer
 from tools.network_scanner import Network_Scanner
 from rich.console import Console
 import argparse
 import json
-import sys
 
 console = Console()
 error_console = Console(stderr=True)
@@ -11,21 +13,27 @@ error_console = Console(stderr=True)
 COMMON_PORTS = [21, 23, 25, 79, 80, 88, 135, 443, 445, 2375, 2376, 8080, 8081]
 
 def start_scan(ip, ports, output_file, aggressive, timeout, max_threads):
+    console = Console()
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    results_dir = os.path.join(script_dir, "results")
+    os.makedirs(results_dir, exist_ok=True)
+
     # Subnet verification
     network_verifyer = Network_Verifyer(max_threads)
     alive_ranges = network_verifyer.verify_network(ip, aggressive, timeout)
-    
+
     console.print("\n[bold yellow]Network/s Verified! Results:[/bold yellow]", alive_ranges)
-    with open(f"results/{output_file}_alive_ranges.txt", "w") as f:
+    with open(os.path.join(results_dir, f"{output_file}_alive_ranges.txt"), "w") as f:
         f.write("\n".join(alive_ranges) + "\n")
 
     # Port scan
     if ports:
-        network_scaner = Network_Scanner(max_threads)
+        network_scanner = Network_Scanner(max_threads)
         scan_results = network_scanner.scan_networks(alive_ranges, ports)
 
         console.print("\n[bold yellow]All Ports Scanned! Scan Finished[/bold yellow]")
-        with open(f"results/{output_file}_ports_scan.txt", "w") as f:
+        with open(os.path.join(results_dir, f"{output_file}_ports_scan.txt"), "w") as f:
             json.dump(scan_results, f, indent=4)
 
 

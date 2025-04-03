@@ -5,7 +5,6 @@ import subprocess
 
 
 class Network_Scanner:
-
     def __init__(self, max_threads):
         self.console = Console()
         self.max_threads = max_threads
@@ -13,32 +12,32 @@ class Network_Scanner:
         self.lock = threading.Lock()
 
     def scan_networks(self, networks, ports):
-        self.netkorks = networks
+        self.networks = networks  # Corrección de `netkorks`
         self.ports = ports
 
         def scan_network_hosts(network_str):
             network = ipaddress.IPv4Network(network_str, strict=False)
             local_results = []
             for host in network.hosts():
-                ports = scan_ports(host)
-                local_results.append({"host": str(host), "open_ports": ports})
-            with lock:
+                open_ports = self.scan_ports(host)  # Agregado `self.`
+                local_results.append({"host": str(host), "open_ports": open_ports})
+            with self.lock:  # Agregado `self.`
                 self.network_map.extend(local_results)
-        
+
         threads = []
         for network in self.networks:
             thread = threading.Thread(target=scan_network_hosts, args=(network,))
             threads.append(thread)
             thread.start()
-            
+
             if len(threads) >= self.max_threads:
                 for t in threads:
                     t.join()
                 threads.clear()
-        
+
         for thread in threads:
             thread.join()
-        
+
         return self.network_map
 
     def scan_ports(self, ip):

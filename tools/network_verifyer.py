@@ -71,7 +71,8 @@ class Network_Verifyer:
         def check_ip(ip):
             nonlocal alive
             if self.ping(ip, timeout):
-                alive = True
+                with self.lock:
+                    alive = True
 
         threads = []
         for _, ips in ip_groups.items():
